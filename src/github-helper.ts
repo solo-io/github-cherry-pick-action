@@ -19,6 +19,7 @@ export interface Inputs {
   teamReviewers: string[]
   cherryPickBranch?: string
   force?: boolean
+  lastReleasedTag?: string
 }
 
 export async function createPullRequest(
