@@ -13706,18 +13706,20 @@ class ChangelogHelper {
                 if (!dirent.isDirectory())
                     continue;
                 const dirName = dirent.name;
+                // if the directory name is the same as the target directory name, skip moving (no-op)
                 if (dirName === targetDirName)
                     continue;
                 // check if the directory name is a valid semver to avoid processing unrelated folders.
-                if (!semver.valid(semver.clean(dirName))) {
+                const cleanCoercedDirVersion = semver.coerce(semver.clean(dirName));
+                if (!semver.valid(cleanCoercedDirVersion)) {
+                    core.warning(`skipping invalid directory: ${dirName}`);
                     continue;
                 }
-                const dirVersion = semver.coerce(semver.clean(dirName));
-                const targetVersion = semver.coerce(targetDirName);
+                const cleanCoercedTargetVersion = semver.coerce(semver.clean(targetDirName));
                 // Only move from directories strictly "newer" than our target.
                 // This prevents moving entries from older versions (e.g. v2.6.0-rc1 when we are on v2.7.x)
                 // into the new folder.
-                if (dirVersion && targetVersion && semver.gt(dirVersion, targetVersion)) {
+                if (cleanCoercedDirVersion && cleanCoercedTargetVersion && semver.gt(cleanCoercedDirVersion, cleanCoercedTargetVersion)) {
                     // Move all contents from other directories to the target directory
                     // the thinking is if we are cherry-picking from main, any files under the new dir e.g v2.12.0-beta1
                     // can only be on the LTS branch if they were introduced by the cherry-pick, 
@@ -14025,13 +14027,15 @@ function run() {
             catch (_a) {
                 core.info(`Encountered error while cherry-picking.`);
             }
+            core.endGroup();
             if (inputs.lastReleasedTag) {
                 core.startGroup('Moving changelog entries');
-                const changelogHelper = new changelog_helper_1.ChangelogHelper(); // Use default 'changelog' root
+                const changelogHelper = new changelog_helper_1.ChangelogHelper();
                 yield changelogHelper.moveEntriesToNextPatchVersion(inputs.lastReleasedTag);
                 core.endGroup();
             }
             // Take whatever is suggested by git if there are conflicts
+            core.startGroup('Adding and committing changes');
             yield gitExecution(['add', '.']);
             yield gitExecution(['commit']);
             core.endGroup();
