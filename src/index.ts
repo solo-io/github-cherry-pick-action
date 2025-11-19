@@ -4,7 +4,8 @@ import * as exec from '@actions/exec'
 import * as utils from './utils'
 import * as github from '@actions/github'
 import {Inputs, createPullRequest} from './github-helper'
-import { PullRequest } from '@octokit/webhooks-definitions/schema'
+import {PullRequest} from '@octokit/webhooks-definitions/schema'
+import {ChangelogHelper} from './changelog-helper'
 
 const CHERRYPICK_EMPTY =
   'The previous cherry-pick is now empty, possibly due to conflict resolution.'
@@ -24,14 +25,16 @@ export async function run(): Promise<void> {
       assignees: utils.getInputAsArray('assignees'),
       reviewers: utils.getInputAsArray('reviewers'),
       teamReviewers: utils.getInputAsArray('teamReviewers'),
-      cherryPickBranch: core.getInput('cherry-pick-branch')
+      cherryPickBranch: core.getInput('cherry-pick-branch'),
+      lastReleasedTag: core.getInput('last-released-tag')
     }
 
     core.info(`Cherry pick into branch ${inputs.branch}!`)
 
     // the value of merge_commit_sha changes depending on the status of the pull request
     // see https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
-    const githubSha = (github.context.payload.pull_request as PullRequest).merge_commit_sha
+    const githubSha = (github.context.payload.pull_request as PullRequest)
+      .merge_commit_sha
     const mergedPrBranchName = (
       github.context.payload.pull_request as PullRequest
     ).head.ref
@@ -73,10 +76,21 @@ export async function run(): Promise<void> {
     } catch {
       core.info(`Encountered error while cherry-picking.`)
     }
+    core.endGroup()
+
+    if (inputs.lastReleasedTag) {
+      core.startGroup('Moving changelog entries')
+      const changelogHelper = new ChangelogHelper()
+      await changelogHelper.moveEntriesToNextPatchVersion(inputs.lastReleasedTag)
+      core.endGroup()
+    }
+
     // Take whatever is suggested by git if there are conflicts
+    core.startGroup('Adding and committing changes')
     await gitExecution(['add', '.'])
     await gitExecution(['commit'])
     core.endGroup()
+
 
     // Push new branch
     core.startGroup('Push new branch to remote')

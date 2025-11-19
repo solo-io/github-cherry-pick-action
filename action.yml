@@ -53,6 +53,9 @@ inputs:
   force:
     description: "Forcefully push the branch to remote branch"
     required: false
+  last-released-tag:
+    description: "The last released tag on the branch (e.g. v2.7.7). Changelog entries will be moved to the next patch version (e.g. v2.7.8)."
+    required: false
 runs:
   using: node16
   main: dist/index.js
