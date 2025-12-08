@@ -9383,7 +9383,18 @@ function run() {
             }
             // Take whatever is suggested by git if there are conflicts
             yield gitExecution(['add', '.'])
-            yield gitExecution(['commit', "--no-edit"])
+
+            //yield gitExecution(['commit', "--no-edit"])
+            
+            // only commit if there are changes
+            const status = yield gitExecution(['status', '--porcelain']);
+            if (status.stdout.trim().length === 0) {
+                core.info('Working tree clean; skipping commit.');
+            }
+            else {
+                yield gitExecution(['commit', '--no-edit']);
+            }
+
             core.endGroup();
             // Push new branch
             core.startGroup('Push new branch to remote');
