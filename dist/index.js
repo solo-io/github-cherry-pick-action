@@ -9195,6 +9195,7 @@ function createPullRequest(inputs, prBranch) {
                 // if the body comes from inputs, we replace {old_pull_request_id}
                 // to make it easy to reference the previous pull request in the new
                 body = body.replace('{old_pull_request_id}', pull_request.number.toString());
+                body = body.replace('{old_body}', pull_request.body ?? '');
             }
             core.info(`Using body '${body}'`);
             // Create PR
@@ -9383,7 +9384,16 @@ function run() {
             }
             // Take whatever is suggested by git if there are conflicts
             yield gitExecution(['add', '.'])
-            yield gitExecution(['commit', "--no-edit"])
+
+            // only commit if there are changes
+            const status = yield gitExecution(['status', '--porcelain']);
+            if (status.stdout.trim().length === 0) {
+                core.info('Working tree clean; skipping commit.');
+            }
+            else {
+                yield gitExecution(['commit', '--no-edit']);
+            }
+
             core.endGroup();
             // Push new branch
             core.startGroup('Push new branch to remote');

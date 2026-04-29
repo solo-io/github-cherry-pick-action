@@ -75,7 +75,15 @@ export async function run(): Promise<void> {
     }
     // Take whatever is suggested by git if there are conflicts
     await gitExecution(['add', '.'])
-    await gitExecution(['commit'])
+
+    // only commit if there are changes
+    const status = await gitExecution(['status', '--porcelain'])
+    if (status.stdout.trim().length === 0) {
+      core.info('Working tree clean; skipping commit.')
+    } else {
+      await gitExecution(['commit', '--no-edit'])
+    }
+
     core.endGroup()
 
     // Push new branch
