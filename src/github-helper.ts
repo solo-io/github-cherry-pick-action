@@ -58,6 +58,9 @@ export async function createPullRequest(
         '{old_pull_request_id}',
         pull_request.number.toString()
       )
+      // replace {old_body} with the original PR body so callers can prepend
+      // or append text while still including the original description
+      body = body.replace('{old_body}', pull_request.body ?? '')
     }
     core.info(`Using body '${body}'`)
 

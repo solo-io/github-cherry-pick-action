@@ -9195,6 +9195,7 @@ function createPullRequest(inputs, prBranch) {
                 // if the body comes from inputs, we replace {old_pull_request_id}
                 // to make it easy to reference the previous pull request in the new
                 body = body.replace('{old_pull_request_id}', pull_request.number.toString());
+                body = body.replace('{old_body}', pull_request.body ?? '');
             }
             core.info(`Using body '${body}'`);
             // Create PR
