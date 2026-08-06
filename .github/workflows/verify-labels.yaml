@@ -6,9 +6,11 @@ on:
 
 jobs:
   update_release_draft:
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     steps:
-      - uses: jesusvasquez333/verify-pr-label-action@2f0319c23a61915af52e8f905cf7c272be3b363d #v1.3.1
+      - uses: jesusvasquez333/verify-pr-label-action@2f0319c23a61915af52e8f905cf7c272be3b363d # v1.3.1
         with:
           github-token: '${{ secrets.GITHUB_TOKEN }}'
           valid-labels: 'bug, enhancement, maintenance'

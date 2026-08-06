@@ -1,8 +1,16 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test
+} from '@jest/globals'
 import {run} from '../src/index'
 import {createPullRequest} from '../src/github-helper'
-import { PullRequest } from '@octokit/webhooks-definitions/schema'
+import type {PullRequest} from '@octokit/webhooks-types'
 
 const defaultMockedGetInputData: any = {
   token: 'whatever',
@@ -19,42 +27,65 @@ const mockedCreatePullRequestOutputData: any = {
 let mockedGetInputData: any = defaultMockedGetInputData
 
 // default mock
-jest.mock('@actions/core', () => {
-  return {
+jest.mock(
+  '@actions/core',
+  () => ({
     info: jest.fn(),
-    setFailed: jest.fn().mockImplementation(msg => {
-      throw new Error(msg)
-    }),
+    setFailed: jest
+      .fn<(message: string | Error) => never>()
+      .mockImplementation(message => {
+        throw message instanceof Error ? message : new Error(message)
+      }),
     // redirect to stdout
     startGroup: jest.fn().mockImplementation(console.log),
     endGroup: jest.fn(),
-    getInput: jest.fn().mockImplementation((name: string) => {
-      return name in mockedGetInputData ? mockedGetInputData[name] : ''
-    }),
+    getInput: jest
+      .fn<(name: string) => string>()
+      .mockImplementation(name =>
+        name in mockedGetInputData ? mockedGetInputData[name] : ''
+      ),
     setOutput: jest.fn().mockImplementation(() => {
       return mockedCreatePullRequestOutputData
     })
-  }
-})
+  }),
+  {virtual: true}
+)
 
-jest.mock('@actions/exec', () => {
-  return {
+jest.mock(
+  '@actions/exec',
+  () => ({
     // 0 -> success
-    exec: jest.fn().mockResolvedValue(0)
-  }
-})
+    exec: jest
+      .fn<(...args: unknown[]) => Promise<number>>()
+      .mockResolvedValue(0)
+  }),
+  {virtual: true}
+)
 
-jest.mock('@actions/github', () => {
-  return {
+jest.mock(
+  '@actions/io',
+  () => ({
+    which: jest.fn<() => Promise<string>>().mockResolvedValue('git')
+  }),
+  {virtual: true}
+)
+
+jest.mock(
+  '@actions/github',
+  () => ({
     context: {
       payload: {
         pull_request: {
-          merge_commit_sha: 'XXXXXX'
+          merge_commit_sha: 'XXXXXX',
+          head: {
+            ref: 'XXXXXX'
+          }
         } as PullRequest
       }
     }
-  }
-})
+  }),
+  {virtual: true}
+)
 
 jest.mock('../src/github-helper', () => {
   return {
@@ -74,7 +105,7 @@ describe('run main', () => {
   })
 
   const commonChecks = (targetBranch: string, cherryPickBranch: string) => {
-    expect(core.startGroup).toBeCalledTimes(6)
+    expect(core.startGroup).toHaveBeenCalledTimes(6)
     expect(core.startGroup).toHaveBeenCalledWith(
       'Configuring the committer and author'
     )
@@ -86,19 +117,19 @@ describe('run main', () => {
     expect(core.startGroup).toHaveBeenCalledWith('Push new branch to remote')
     expect(core.startGroup).toHaveBeenCalledWith('Opening pull request')
 
-    expect(core.endGroup).toBeCalledTimes(6)
+    expect(core.endGroup).toHaveBeenCalledTimes(6)
 
     // TODO check params
-    expect(exec.exec).toBeCalledTimes(7)
+    expect(exec.exec).toHaveBeenCalledTimes(9)
 
     // TODO check params
-    expect(createPullRequest).toBeCalledTimes(1)
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
   }
 
   test('valid execution with default new branch', async () => {
     await run()
 
-    commonChecks('target-branch', 'cherry-pick-target-branch-XXXXXX')
+    commonChecks('target-branch', 'Me <me@mail.com>/target-branch-XXXXXX')
 
     expect(createPullRequest).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -111,7 +142,7 @@ describe('run main', () => {
         reviewers: [],
         cherryPickBranch: ''
       }),
-      'cherry-pick-target-branch-XXXXXX'
+      'Me <me@mail.com>/target-branch-XXXXXX'
     )
   })
 

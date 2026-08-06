@@ -45,7 +45,7 @@ jobs:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'release-v1.0') && github.event.pull_request.merged == true }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Cherry pick into release-v1.0
@@ -62,7 +62,7 @@ jobs:
     if: ${{ contains(github.event.pull_request.labels.*.name, 'release-v2.0') && github.event.pull_request.merged == true }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - name: Cherry pick into release-v2.0
@@ -82,7 +82,7 @@ env:
 ### Using outputs:
 ```yml
 steps:
-  - uses: actions/checkout@v3
+  - uses: actions/checkout@v6
   - uses: ashleywang1/github-cherry-pick-action@v1.0.1
     id: new-issue
     with:
