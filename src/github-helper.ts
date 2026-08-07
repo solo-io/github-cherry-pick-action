@@ -1,9 +1,6 @@
-import * as github from '@actions/github'
 import * as core from '@actions/core'
-import {PullRequest} from '@octokit/webhooks-definitions/schema'
-
-const ERROR_PR_REVIEW_FROM_AUTHOR =
-  'Review cannot be requested from pull request author'
+import * as github from '@actions/github'
+import type {PullRequest} from '@octokit/webhooks-types'
 
 export interface Inputs {
   token: string
@@ -21,119 +18,99 @@ export interface Inputs {
   force?: boolean
 }
 
+type Octokit = ReturnType<typeof github.getOctokit>
+type CreatedPullRequest = Awaited<
+  ReturnType<Octokit['rest']['pulls']['create']>
+>
+
 export async function createPullRequest(
   inputs: Inputs,
   prBranch: string
-): Promise<any> {
-  const octokit = github.getOctokit(inputs.token)
-  if (!github.context.payload) {
-    core.info(`Error: no payload in github.context`)
-    return
+): Promise<CreatedPullRequest> {
+  const pullRequest = github.context.payload.pull_request as
+    PullRequest | undefined
+  if (!pullRequest) {
+    throw new Error('The GitHub event payload does not contain a pull request')
   }
-  const pull_request = github.context.payload.pull_request as PullRequest
-  if (process.env.GITHUB_REPOSITORY !== undefined) {
-    const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/')
 
-    // Get PR title
-    core.info(`Input title is '${inputs.title}'`)
-    let title = inputs.title
-    if (title === undefined || title === '') {
-      title = pull_request.title
-    } else {
-      // if the title comes from inputs, we replace {old_title}
-      // so use users can set `title: 'Cherry pick: {old_title}`
-      title = title.replace('{old_title}', pull_request.title)
-    }
-    core.info(`Using title '${title}'`)
+  const repository = process.env.GITHUB_REPOSITORY?.split('/')
+  if (
+    repository?.length !== 2 ||
+    repository[0] === '' ||
+    repository[1] === ''
+  ) {
+    throw new Error('GITHUB_REPOSITORY must be in the form owner/repository')
+  }
+  const [owner, repo] = repository
+  const octokit = github.getOctokit(inputs.token)
 
-    // Get PR body
-    core.info(`Input body is '${inputs.body}'`)
-    let body = inputs.body
-    if (body === undefined || body === '') {
-      body = pull_request.body
-    } else {
-      // if the body comes from inputs, we replace {old_pull_request_id}
-      // to make it easy to reference the previous pull request in the new
-      body = body.replace(
+  const title = inputs.title
+    ? inputs.title.replaceAll('{old_title}', pullRequest.title)
+    : pullRequest.title
+
+  const body = inputs.body
+    ? inputs.body.replaceAll(
         '{old_pull_request_id}',
-        pull_request.number.toString()
+        pullRequest.number.toString()
       )
-    }
-    core.info(`Using body '${body}'`)
+    : (pullRequest.body ?? undefined)
+  core.info('Creating the backport pull request')
+  const pull = await octokit.rest.pulls.create({
+    owner,
+    repo,
+    head: prBranch,
+    base: inputs.branch,
+    title,
+    body
+  })
 
-    // Create PR
-    const pull = await octokit.rest.pulls.create({
+  const appliedLabels = new Set(inputs.labels)
+  if (inputs.inherit_labels) {
+    for (const label of pullRequest.labels) {
+      if (label.name !== inputs.branch) appliedLabels.add(label.name)
+    }
+  }
+  if (appliedLabels.size > 0) {
+    const labels = [...appliedLabels]
+    core.info(`Applying ${labels.length} label(s)`)
+    await octokit.rest.issues.addLabels({
       owner,
       repo,
-      head: prBranch,
-      base: inputs.branch,
-      title,
-      body
+      issue_number: pull.data.number,
+      labels
     })
-
-    // Apply labels
-    const appliedLabels = inputs.labels
-
-    if (inputs.inherit_labels) {
-      const prLabels = pull_request.labels
-      if (prLabels) {
-        for (const item of prLabels) {
-          if (item.name !== inputs.branch) {
-            appliedLabels.push(item.name)
-          }
-        }
-      }
-    }
-    if (appliedLabels.length > 0) {
-      core.info(`Applying labels '${appliedLabels}'`)
-      await octokit.rest.issues.addLabels({
-        owner,
-        repo,
-        issue_number: pull.data.number,
-        labels: appliedLabels
-      })
-    }
-
-    // Apply assignees
-    if (inputs.assignees.length > 0) {
-      core.info(`Applying assignees '${inputs.assignees}'`)
-      await octokit.rest.issues.addAssignees({
-        owner,
-        repo,
-        issue_number: pull.data.number,
-        assignees: inputs.assignees
-      })
-    }
-
-    // Request reviewers and team reviewers
-    try {
-      if (inputs.reviewers.length > 0) {
-        core.info(`Requesting reviewers '${inputs.reviewers}'`)
-        await octokit.rest.pulls.requestReviewers({
-          owner,
-          repo,
-          pull_number: pull.data.number,
-          reviewers: inputs.reviewers
-        })
-      }
-      if (inputs.teamReviewers.length > 0) {
-        core.info(`Requesting team reviewers '${inputs.teamReviewers}'`)
-        await octokit.rest.pulls.requestReviewers({
-          owner,
-          repo,
-          pull_number: pull.data.number,
-          team_reviewers: inputs.teamReviewers
-        })
-      }
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        if (e.message && e.message.includes(ERROR_PR_REVIEW_FROM_AUTHOR)) {
-          core.warning(ERROR_PR_REVIEW_FROM_AUTHOR)
-        } else {
-          throw e
-        }
-      }
-    }
-    return pull
   }
+
+  if (inputs.assignees.length > 0) {
+    core.info(`Applying ${inputs.assignees.length} assignee(s)`)
+    await octokit.rest.issues.addAssignees({
+      owner,
+      repo,
+      issue_number: pull.data.number,
+      assignees: inputs.assignees
+    })
+  }
+
+  const sourceAuthor = pullRequest.user.login.toLowerCase()
+  const reviewers = inputs.reviewers.filter(
+    reviewer => reviewer.toLowerCase() !== sourceAuthor
+  )
+  if (reviewers.length !== inputs.reviewers.length) {
+    core.warning('A pull request author cannot review their own pull request')
+  }
+  if (reviewers.length > 0 || inputs.teamReviewers.length > 0) {
+    core.info(
+      `Requesting ${reviewers.length} user review(s) and ` +
+        `${inputs.teamReviewers.length} team review(s)`
+    )
+    await octokit.rest.pulls.requestReviewers({
+      owner,
+      repo,
+      pull_number: pull.data.number,
+      reviewers,
+      team_reviewers: inputs.teamReviewers
+    })
+  }
+
+  return pull
 }

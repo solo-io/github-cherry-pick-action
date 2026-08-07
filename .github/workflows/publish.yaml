@@ -10,24 +10,30 @@ on:
 
 jobs:
   publish:
+    permissions:
+      contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
     steps:
       # Release with semantic tag like v1.0.3
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.release.tag_name }}
 
       - name: Setup Node
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+          cache: npm
 
       - name: Test and Build
-        run: |
-            npm ci && npm run all
+        run: npm ci && npm run all
       # Compile dist/index.js and bundle with action.yml
       # Force push major and minor tags, e.g. v1, v1.0
       # See documentation: https://github.com/JasonEtco/build-and-tag-action
       - name: Publish Release
-        uses: JasonEtco/build-and-tag-action@v2
+        uses: JasonEtco/build-and-tag-action@dd5e4991048c325f6d85b4155e586fc211c644da # v2.0.1
         env:
           GITHUB_TOKEN: ${{ github.token }}

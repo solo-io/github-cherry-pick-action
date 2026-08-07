@@ -34,7 +34,7 @@ inputs:
     description: "A comma or newline separated list of labels."
     required: false
   inherit_labels:
-    description: "Set to false if you want to inherit labels from parent PR"
+    description: "Set to true to inherit labels from the source pull request"
     required: false
     default: "true"
   assignees:
@@ -51,10 +51,17 @@ inputs:
   cherry-pick-branch:
     description: "Name of the new cherry pick branch."
   force:
-    description: "Forcefully push the branch to remote branch"
+    description: "Update an existing remote backport branch using force-with-lease"
     required: false
+outputs:
+  data:
+    description: "JSON representation of the created pull request"
+  number:
+    description: "Number of the created pull request"
+  html_url:
+    description: "URL of the created pull request"
 runs:
-  using: node16
+  using: node24
   main: dist/index.js
 branding:
   icon: 'git-pull-request'
