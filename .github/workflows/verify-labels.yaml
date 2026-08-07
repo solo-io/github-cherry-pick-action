@@ -2,10 +2,13 @@ name: Verify labels for release
 
 on:
   pull_request_target:
-   types: [opened, labeled, unlabeled, synchronize]
+    types: [opened, labeled, unlabeled, synchronize]
 
 jobs:
   update_release_draft:
+    permissions:
+      issues: read
+      pull-requests: read
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest

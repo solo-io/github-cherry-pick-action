@@ -11,11 +11,8 @@ export function getInputAsBoolean(
   name: string,
   options?: core.InputOptions
 ): boolean | undefined {
-  try {
-    return JSON.parse(core.getInput(name, options))
-  } catch {
-    return undefined
-  }
+  const value = core.getInput(name, options)
+  return value === '' ? undefined : core.getBooleanInput(name, options)
 }
 
 export function getStringAsArray(str: string): string[] {
@@ -23,6 +20,12 @@ export function getStringAsArray(str: string): string[] {
     .split(/[\n,]+/)
     .map(s => s.trim())
     .filter(x => x !== '')
+}
+
+export function sanitizeBranchComponent(value: string): string {
+  return (
+    value.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'branch'
+  )
 }
 
 interface DisplayNameEmail {

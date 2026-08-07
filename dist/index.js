@@ -31653,7 +31653,7 @@ function exportVariable(name, val) {
  * ```
  */
 function core_setSecret(secret) {
-    issueCommand('add-mask', {}, secret);
+    command_issueCommand('add-mask', {}, secret);
 }
 /**
  * Prepends inputPath to the PATH (for this action and future actions)
@@ -31893,43 +31893,6 @@ function getIDToken(aud) {
  */
 
 //# sourceMappingURL=core.js.map
-;// CONCATENATED MODULE: ./src/utils.ts
-
-function getInputAsArray(name, options) {
-    return getStringAsArray(getInput(name, options));
-}
-function getInputAsBoolean(name, options) {
-    try {
-        return JSON.parse(getInput(name, options));
-    }
-    catch {
-        return undefined;
-    }
-}
-function getStringAsArray(str) {
-    return str
-        .split(/[\n,]+/)
-        .map(s => s.trim())
-        .filter(x => x !== '');
-}
-function parseDisplayNameEmail(displayNameEmail) {
-    // Parse the name and email address from a string in the following format
-    // Display Name <email@address.com>
-    const pattern = /^([^<]+)\s*<([^>]+)>$/i;
-    // Check we have a match
-    const match = displayNameEmail.match(pattern);
-    if (!match) {
-        throw new Error(`The format of '${displayNameEmail}' is not a valid email address with display name`);
-    }
-    // Check that name and email are not just whitespace
-    const name = match[1].trim();
-    const email = match[2].trim();
-    if (!name || !email) {
-        throw new Error(`The format of '${displayNameEmail}' is not a valid email address with display name`);
-    }
-    return { name, email };
-}
-
 ;// CONCATENATED MODULE: ./node_modules/@actions/github/lib/context.js
 
 
@@ -36641,113 +36604,113 @@ function getOctokit(token, options, ...additionalPlugins) {
 ;// CONCATENATED MODULE: ./src/github-helper.ts
 
 
-const ERROR_PR_REVIEW_FROM_AUTHOR = 'Review cannot be requested from pull request author';
 async function createPullRequest(inputs, prBranch) {
-    const octokit = getOctokit(inputs.token);
-    if (!github_context.payload) {
-        info(`Error: no payload in github.context`);
-        return;
+    const pullRequest = github_context.payload.pull_request;
+    if (!pullRequest) {
+        throw new Error('The GitHub event payload does not contain a pull request');
     }
-    const pull_request = github_context.payload.pull_request;
-    if (process.env.GITHUB_REPOSITORY !== undefined) {
-        const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
-        // Get PR title
-        info(`Input title is '${inputs.title}'`);
-        let title = inputs.title;
-        if (title === undefined || title === '') {
-            title = pull_request.title;
+    const repository = process.env.GITHUB_REPOSITORY?.split('/');
+    if (repository?.length !== 2 ||
+        repository[0] === '' ||
+        repository[1] === '') {
+        throw new Error('GITHUB_REPOSITORY must be in the form owner/repository');
+    }
+    const [owner, repo] = repository;
+    const octokit = getOctokit(inputs.token);
+    const title = inputs.title
+        ? inputs.title.replaceAll('{old_title}', pullRequest.title)
+        : pullRequest.title;
+    const body = inputs.body
+        ? inputs.body.replaceAll('{old_pull_request_id}', pullRequest.number.toString())
+        : (pullRequest.body ?? undefined);
+    info('Creating the backport pull request');
+    const pull = await octokit.rest.pulls.create({
+        owner,
+        repo,
+        head: prBranch,
+        base: inputs.branch,
+        title,
+        body
+    });
+    const appliedLabels = new Set(inputs.labels);
+    if (inputs.inherit_labels) {
+        for (const label of pullRequest.labels) {
+            if (label.name !== inputs.branch)
+                appliedLabels.add(label.name);
         }
-        else {
-            // if the title comes from inputs, we replace {old_title}
-            // so use users can set `title: 'Cherry pick: {old_title}`
-            title = title.replace('{old_title}', pull_request.title);
-        }
-        info(`Using title '${title}'`);
-        // Get PR body
-        info(`Input body is '${inputs.body}'`);
-        let body = inputs.body;
-        if (body === undefined || body === '') {
-            body = pull_request.body ?? undefined;
-        }
-        else {
-            // if the body comes from inputs, we replace {old_pull_request_id}
-            // to make it easy to reference the previous pull request in the new
-            body = body.replace('{old_pull_request_id}', pull_request.number.toString());
-        }
-        info(`Using body '${body}'`);
-        // Create PR
-        const pull = await octokit.rest.pulls.create({
+    }
+    if (appliedLabels.size > 0) {
+        const labels = [...appliedLabels];
+        info(`Applying ${labels.length} label(s)`);
+        await octokit.rest.issues.addLabels({
             owner,
             repo,
-            head: prBranch,
-            base: inputs.branch,
-            title,
-            body
+            issue_number: pull.data.number,
+            labels
         });
-        // Apply labels
-        const appliedLabels = inputs.labels;
-        if (inputs.inherit_labels) {
-            const prLabels = pull_request.labels;
-            if (prLabels) {
-                for (const item of prLabels) {
-                    if (item.name !== inputs.branch) {
-                        appliedLabels.push(item.name);
-                    }
-                }
-            }
-        }
-        if (appliedLabels.length > 0) {
-            info(`Applying labels '${appliedLabels}'`);
-            await octokit.rest.issues.addLabels({
-                owner,
-                repo,
-                issue_number: pull.data.number,
-                labels: appliedLabels
-            });
-        }
-        // Apply assignees
-        if (inputs.assignees.length > 0) {
-            info(`Applying assignees '${inputs.assignees}'`);
-            await octokit.rest.issues.addAssignees({
-                owner,
-                repo,
-                issue_number: pull.data.number,
-                assignees: inputs.assignees
-            });
-        }
-        // Request reviewers and team reviewers
-        try {
-            if (inputs.reviewers.length > 0) {
-                info(`Requesting reviewers '${inputs.reviewers}'`);
-                await octokit.rest.pulls.requestReviewers({
-                    owner,
-                    repo,
-                    pull_number: pull.data.number,
-                    reviewers: inputs.reviewers
-                });
-            }
-            if (inputs.teamReviewers.length > 0) {
-                info(`Requesting team reviewers '${inputs.teamReviewers}'`);
-                await octokit.rest.pulls.requestReviewers({
-                    owner,
-                    repo,
-                    pull_number: pull.data.number,
-                    team_reviewers: inputs.teamReviewers
-                });
-            }
-        }
-        catch (e) {
-            if (e instanceof Error) {
-                if (e.message && e.message.includes(ERROR_PR_REVIEW_FROM_AUTHOR)) {
-                    warning(ERROR_PR_REVIEW_FROM_AUTHOR);
-                }
-                else {
-                    throw e;
-                }
-            }
-        }
-        return pull;
     }
+    if (inputs.assignees.length > 0) {
+        info(`Applying ${inputs.assignees.length} assignee(s)`);
+        await octokit.rest.issues.addAssignees({
+            owner,
+            repo,
+            issue_number: pull.data.number,
+            assignees: inputs.assignees
+        });
+    }
+    const sourceAuthor = pullRequest.user.login.toLowerCase();
+    const reviewers = inputs.reviewers.filter(reviewer => reviewer.toLowerCase() !== sourceAuthor);
+    if (reviewers.length !== inputs.reviewers.length) {
+        warning('A pull request author cannot review their own pull request');
+    }
+    if (reviewers.length > 0 || inputs.teamReviewers.length > 0) {
+        info(`Requesting ${reviewers.length} user review(s) and ` +
+            `${inputs.teamReviewers.length} team review(s)`);
+        await octokit.rest.pulls.requestReviewers({
+            owner,
+            repo,
+            pull_number: pull.data.number,
+            reviewers,
+            team_reviewers: inputs.teamReviewers
+        });
+    }
+    return pull;
+}
+
+;// CONCATENATED MODULE: ./src/utils.ts
+
+function getInputAsArray(name, options) {
+    return getStringAsArray(getInput(name, options));
+}
+function getInputAsBoolean(name, options) {
+    const value = getInput(name, options);
+    return value === '' ? undefined : getBooleanInput(name, options);
+}
+function getStringAsArray(str) {
+    return str
+        .split(/[\n,]+/)
+        .map(s => s.trim())
+        .filter(x => x !== '');
+}
+function sanitizeBranchComponent(value) {
+    return (value.replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'branch');
+}
+function parseDisplayNameEmail(displayNameEmail) {
+    // Parse the name and email address from a string in the following format
+    // Display Name <email@address.com>
+    const pattern = /^([^<]+)\s*<([^>]+)>$/i;
+    // Check we have a match
+    const match = displayNameEmail.match(pattern);
+    if (!match) {
+        throw new Error(`The format of '${displayNameEmail}' is not a valid email address with display name`);
+    }
+    // Check that name and email are not just whitespace
+    const name = match[1].trim();
+    const email = match[2].trim();
+    if (!name || !email) {
+        throw new Error(`The format of '${displayNameEmail}' is not a valid email address with display name`);
+    }
+    return { name, email };
 }
 
 ;// CONCATENATED MODULE: ./src/index.ts
@@ -36761,10 +36724,10 @@ async function createPullRequest(inputs, prBranch) {
 async function run() {
     try {
         const inputs = {
-            token: getInput('token'),
-            committer: getInput('committer'),
-            author: getInput('author'),
-            branch: getInput('branch'),
+            token: getInput('token', { required: true }),
+            committer: getInput('committer', { required: true }),
+            author: getInput('author', { required: true }),
+            branch: getInput('branch', { required: true }),
             title: getInput('title'),
             body: getInput('body'),
             force: getInputAsBoolean('force'),
@@ -36772,108 +36735,171 @@ async function run() {
             inherit_labels: getInputAsBoolean('inherit_labels'),
             assignees: getInputAsArray('assignees'),
             reviewers: getInputAsArray('reviewers'),
-            teamReviewers: getInputAsArray('teamReviewers'),
+            teamReviewers: getInputAsArray('team-reviewers'),
             cherryPickBranch: getInput('cherry-pick-branch')
         };
-        info(`Cherry pick into branch ${inputs.branch}!`);
-        // the value of merge_commit_sha changes depending on the status of the pull request
-        // see https://docs.github.com/en/rest/pulls/pulls?apiVersion=2022-11-28#get-a-pull-request
-        const githubSha = github_context.payload.pull_request
-            .merge_commit_sha;
-        const mergedPrBranchName = github_context.payload.pull_request.head.ref;
-        const prBranch = inputs.cherryPickBranch
-            ? inputs.cherryPickBranch
-            : `${inputs.author}/${inputs.branch}-${mergedPrBranchName}`;
-        // Configure the committer and author
-        startGroup('Configuring the committer and author');
+        core_setSecret(inputs.token);
+        const pullRequest = github_context.payload.pull_request;
+        if (!pullRequest) {
+            throw new Error('This action must run for a pull_request event');
+        }
+        if (!pullRequest.merged) {
+            throw new Error('The source pull request must be merged before backporting');
+        }
+        const prBranch = inputs.cherryPickBranch ||
+            `cherry-pick-${sanitizeBranchComponent(inputs.branch)}-${pullRequest.number}`;
+        const sourceRef = `refs/remotes/origin/pull/${pullRequest.number}/head`;
+        const sourceBaseRef = `refs/remotes/origin/backport-base/${pullRequest.number}`;
+        await validateBranchName(inputs.branch);
+        await validateBranchName(pullRequest.base.ref);
+        await validateBranchName(prBranch);
+        info(`Backporting pull request #${pullRequest.number} into ${inputs.branch}`);
+        startGroup('Configuring Git identity and authentication');
         const parsedAuthor = parseDisplayNameEmail(inputs.author);
         const parsedCommitter = parseDisplayNameEmail(inputs.committer);
-        info(`Configured git committer as '${parsedCommitter.name} <${parsedCommitter.email}>'`);
-        await gitExecution(['config', '--global', 'user.name', parsedAuthor.name]);
+        await gitExecution(['config', '--local', 'user.name', parsedCommitter.name]);
         await gitExecution([
             'config',
-            '--global',
+            '--local',
             'user.email',
             parsedCommitter.email
         ]);
+        await configureGitAuthentication(inputs.token);
+        info(`Using '${parsedAuthor.name} <${parsedAuthor.email}>' as author and ` +
+            `'${parsedCommitter.name} <${parsedCommitter.email}>' as committer`);
         endGroup();
-        // Update branches
-        startGroup('Fetch all branchs');
-        await gitExecution(['remote', 'update']);
-        await gitExecution(['fetch', '--all']);
-        endGroup();
-        // Create branch new branch
-        startGroup(`Create new branch ${prBranch} from ${inputs.branch}`);
-        await gitExecution(['checkout', '-b', prBranch, `origin/${inputs.branch}`]);
-        endGroup();
-        // Cherry pick
-        startGroup('Cherry picking');
-        try {
-            await gitExecution(['cherry-pick', `${githubSha}`, `||`, `true`]);
+        startGroup('Fetching the target branch and pull request');
+        const shallowRepository = await gitExecution([
+            'rev-parse',
+            '--is-shallow-repository'
+        ]);
+        const fetchArgs = [
+            'fetch',
+            '--no-tags',
+            'origin',
+            `+refs/heads/${inputs.branch}:refs/remotes/origin/${inputs.branch}`,
+            // Keep the event's base SHA reachable while preserving its pre-merge
+            // value for a strategy-independent pull request diff.
+            `+refs/heads/${pullRequest.base.ref}:${sourceBaseRef}`,
+            `+refs/pull/${pullRequest.number}/head:${sourceRef}`
+        ];
+        if (shallowRepository.stdout.toString().trim() === 'true') {
+            fetchArgs.splice(2, 0, '--unshallow');
         }
-        catch {
-            info(`Encountered error while cherry-picking.`);
-        }
-        // Take whatever is suggested by git if there are conflicts
-        await gitExecution(['add', '.']);
-        await gitExecution(['commit']);
-        endGroup();
-        // Push new branch
-        startGroup('Push new branch to remote');
+        await gitExecution(fetchArgs);
         if (inputs.force) {
-            await gitExecution(['push', '-u', 'origin', `${prBranch}`, '--force']);
-        }
-        else {
-            await gitExecution(['push', '-u', 'origin', `${prBranch}`]);
+            await gitExecution([
+                'fetch',
+                '--no-tags',
+                'origin',
+                `+refs/heads/${prBranch}:refs/remotes/origin/${prBranch}`
+            ], { allowFailure: true });
         }
         endGroup();
-        // Create pull request
-        startGroup('Opening pull request');
+        startGroup(`Creating ${prBranch} from ${inputs.branch}`);
+        await gitExecution([
+            'checkout',
+            '-b',
+            prBranch,
+            `refs/remotes/origin/${inputs.branch}`
+        ]);
+        endGroup();
+        startGroup('Applying the pull request changes');
+        const patch = await gitExecution([
+            'diff',
+            '--binary',
+            '--full-index',
+            `${pullRequest.base.sha}...${sourceRef}`
+        ]);
+        if (patch.stdout.length === 0) {
+            throw new Error('The pull request has no changes to backport');
+        }
+        await gitExecution(['apply', '--3way', '--index', '--whitespace=nowarn'], {
+            input: patch.stdout
+        });
+        const stagedChanges = await gitExecution(['diff', '--cached', '--quiet'], {
+            allowFailure: true
+        });
+        if (stagedChanges.exitCode === 0) {
+            throw new Error('Applying the pull request produced no changes');
+        }
+        if (stagedChanges.exitCode !== 1) {
+            throw new Error(`Unable to inspect the staged changes: ${stagedChanges.stderr}`);
+        }
+        await gitExecution([
+            'commit',
+            '--author',
+            `${parsedAuthor.name} <${parsedAuthor.email}>`,
+            '-m',
+            `Backport #${pullRequest.number}: ${pullRequest.title}`
+        ]);
+        endGroup();
+        startGroup('Pushing the backport branch');
+        const pushArgs = ['push', '-u', 'origin', prBranch];
+        if (inputs.force) {
+            pushArgs.push('--force-with-lease');
+        }
+        await gitExecution(pushArgs);
+        endGroup();
+        startGroup('Opening the backport pull request');
         const pull = await createPullRequest(inputs, prBranch);
         setOutput('data', JSON.stringify(pull.data));
         setOutput('number', pull.data.number);
         setOutput('html_url', pull.data.html_url);
         endGroup();
     }
-    catch (err) {
-        if (err instanceof Error) {
-            info(`Encountered error: ${err}.`);
-            setFailed(err);
-        }
+    catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setFailed(message);
     }
 }
-async function gitExecution(params) {
-    const result = new GitOutput();
+async function validateBranchName(branch) {
+    await gitExecution(['check-ref-format', '--branch', branch]);
+}
+async function configureGitAuthentication(token) {
+    const serverUrl = github_context.serverUrl.replace(/\/$/, '');
+    const credentials = Buffer.from(`x-access-token:${token}`).toString('base64');
+    const authorization = `AUTHORIZATION: basic ${credentials}`;
+    core_setSecret(credentials);
+    core_setSecret(authorization);
+    await gitExecution([
+        'config',
+        '--local',
+        `http.${serverUrl}/.extraheader`,
+        authorization
+    ]);
+}
+async function gitExecution(params, executionOptions = {}) {
     const stdout = [];
     const stderr = [];
     const options = {
+        ignoreReturnCode: true,
+        input: executionOptions.input,
+        silent: true,
         listeners: {
-            stdout: (data) => {
-                stdout.push(data.toString());
-            },
-            stderr: (data) => {
-                stderr.push(data.toString());
-            }
+            stdout: (data) => stdout.push(data),
+            stderr: (data) => stderr.push(data)
         }
     };
     const gitPath = await which('git', true);
-    result.exitCode = await exec_exec(gitPath, params, options);
-    result.stdout = stdout.join('');
-    result.stderr = stderr.join('');
-    if (result.exitCode === 0) {
-        info(result.stdout.trim());
+    const exitCode = await exec_exec(gitPath, params, options);
+    const result = {
+        stdout: Buffer.concat(stdout),
+        stderr: Buffer.concat(stderr).toString(),
+        exitCode
+    };
+    if (executionOptions.logOutput) {
+        const output = exitCode === 0 ? result.stdout.toString().trim() : result.stderr.trim();
+        if (output)
+            info(output);
     }
-    else {
-        info(result.stderr.trim());
+    if (exitCode !== 0 && !executionOptions.allowFailure) {
+        const detail = result.stderr.trim() || result.stdout.toString().trim();
+        throw new Error(`Git command '${params[0]}' failed with exit code ${exitCode}${detail ? `: ${detail}` : ''}`);
     }
     return result;
 }
-class GitOutput {
-    stdout = '';
-    stderr = '';
-    exitCode = 0;
-}
-// do not run if imported as module
+// Do not run when imported as a module.
 if (__nccwpck_require__.c[__nccwpck_require__.s] === module) {
     run();
 }

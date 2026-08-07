@@ -10,6 +10,8 @@ on:
 
 jobs:
   publish:
+    permissions:
+      contents: write
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     runs-on: ubuntu-latest
@@ -27,8 +29,7 @@ jobs:
           cache: npm
 
       - name: Test and Build
-        run: |
-            npm ci && npm run all
+        run: npm ci && npm run all
       # Compile dist/index.js and bundle with action.yml
       # Force push major and minor tags, e.g. v1, v1.0
       # See documentation: https://github.com/JasonEtco/build-and-tag-action
