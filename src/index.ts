@@ -233,8 +233,3 @@ async function gitExecution(
 
   return result
 }
-
-// Do not run when imported as a module.
-if (require.main === module) {
-  run()
-}
