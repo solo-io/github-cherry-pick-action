@@ -145,6 +145,3 @@ class GitOutput {
 }
 
 // do not run if imported as module
-if (require.main === module) {
-  run()
-}
