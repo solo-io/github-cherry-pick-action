@@ -143,5 +143,3 @@ class GitOutput {
   stderr = ''
   exitCode = 0
 }
-
-// do not run if imported as module

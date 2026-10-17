@@ -37315,7 +37315,6 @@ class GitOutput {
     stderr = '';
     exitCode = 0;
 }
-// do not run if imported as module
 
 ;// CONCATENATED MODULE: ./src/main.ts
 // Entry point bundled by ncc into dist/index.js. It is kept separate from
